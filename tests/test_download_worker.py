@@ -51,9 +51,10 @@ def test_valid_file():
         assert worker.validFile(file) == False, f"Failed for unsupported file: {file}"
 
 @patch('WorkerThreads.DownloadWorker.os.path.join', return_value='/Data/raw/test_file.txt')
+@patch('WorkerThreads.DownloadWorker.os.makedirs')
 @patch('WorkerThreads.DownloadWorker.discovery.build')
 @patch('WorkerThreads.DownloadWorker.open', create=True)
-def test_download_file_successful(mock_open, mock_discovery_build, mock_join, mock_que, mock_credentials):
+def test_download_file_successful(mock_open, mock_discovery_build, mock_makedirs, mock_join, mock_que, mock_credentials):
     """Test successful file download functionality."""
     # Prepare mock objects
     mock_service = MagicMock()
@@ -77,9 +78,10 @@ def test_download_file_successful(mock_open, mock_discovery_build, mock_join, mo
         worker = DownloadWorker(mock_que, mock_credentials)
         
         # Perform file download
-        worker.download_file("test_file_id", "test_file.txt")
+        result = worker.download_file("test_file_id", "test_file.txt")
     
     # Assertions
+    assert result == True
     mock_service.files.return_value.get_media.assert_called_once_with(fileId="test_file_id")
     mock_open.assert_called_once_with('/Data/raw/test_file.txt', 'wb')
     assert mock_downloader.next_chunk.call_count == 2
@@ -90,9 +92,9 @@ def test_download_file_error_scenarios(mock_que, mock_credentials):
     
     # Test invalid input scenarios
     error_test_cases = [
-        (None, None, ValueError, "Invalid file input"),
-        ({"name": "test.txt"}, None, ValueError, "Missing file ID"),
-        ("", "test.txt", ValueError, "Empty file ID")
+        (None, None, ValueError, "Invalid file ID"),
+        ({"name": "test.txt"}, None, ValueError, "Invalid file ID"),
+        ("", "test.txt", ValueError, "Invalid file ID")
     ]
     
     for file_id, file_name, expected_exception, error_message in error_test_cases:
@@ -100,7 +102,7 @@ def test_download_file_error_scenarios(mock_que, mock_credentials):
             worker.download_file(file_id, file_name)
 
 @patch('WorkerThreads.DownloadWorker.discovery.build')
-def test_download_file_network_error(mock_discovery_build, mock_que, mock_credentials):
+def test_download_file_network_error(mock_discovery_build, mock_que, mock_credentials, caplog):
     """Test handling of network or service-related errors."""
     # Configure mock to raise an exception
     mock_service = MagicMock()
@@ -115,11 +117,14 @@ def test_download_file_network_error(mock_discovery_build, mock_que, mock_creden
         "name": "test_file.txt"
     }
     
-    # Expect an exception to be raised or logged
+    # Expect an exception to be raised
     with pytest.raises(Exception, match="Network error"):
         worker.download_file(mock_file["id"], mock_file["name"])
+    
+    # Verify logging
+    assert "Download failed for test_file.txt" in caplog.text
 
-def test_run_method_error_handling(mock_que, mock_credentials):
+def test_run_method_error_handling(mock_que, mock_credentials, caplog):
     """Test error handling in the run method."""
     # Prepare a mock file
     mock_file = {
@@ -133,8 +138,7 @@ def test_run_method_error_handling(mock_que, mock_credentials):
     # Create worker
     with patch.object(DownloadWorker, 'download_file', side_effect=Exception("Download failed")) as mock_download, \
          patch.object(DownloadWorker, 'validFile', return_value=True), \
-         patch('os.path.exists', return_value=False), \
-         patch('builtins.print') as mock_print:
+         patch('os.path.exists', return_value=False):
         
         worker = DownloadWorker(mock_que, mock_credentials)
         worker.run()
@@ -142,8 +146,8 @@ def test_run_method_error_handling(mock_que, mock_credentials):
         # Verify download method was called
         mock_download.assert_called_once_with(mock_file["id"], mock_file["name"])
         
-        # Verify error was printed
-        mock_print.assert_called_with(f"Download failed for {mock_file['name']}")
+        # Verify error was logged
+        assert "Download failed for test_file.txt" in caplog.text
         
         # Verify task is marked as done
         assert mock_que.empty()
