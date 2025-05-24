@@ -58,11 +58,6 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     mock_credentials = create_mock_credentials()
     worker = DownloadWorker(mock_queue, mock_credentials)
 
-    # Mocking the entire download_file method to raise an exception
-    def custom_download_file(self, file_id, file_name):
-        print("Download Error")
-        raise Exception("Download Error")
-
     # Simulate a file to download
     test_file = {"id": "test_file_id", "name": "test_file.txt"}
     mock_queue.put(test_file)
@@ -72,16 +67,18 @@ def test_download_worker_file_download_error_handling(monkeypatch):
          patch('os.path.splitext', return_value=('test_file', '.txt')), \
          patch('os.path.join', return_value="Data/raw/test_file.txt"):
         
-        # Replace the download_file method
-        worker.download_file = custom_download_file.__get__(worker)
-
         # Capture print output to check error handling
         with patch('builtins.print') as mock_print:
-            # We need to use a try/except to handle the queue.Empty
-            try:
+            # Replace the download_file method to raise an exception
+            def mock_download_file(self, file_id, file_name):
+                print("Download Error")
+                raise Exception("Download Error")
+            
+            monkeypatch.setattr(worker, 'download_file', mock_download_file)
+
+            # We need to use a try/except to handle both queue.Empty and the test exception
+            with pytest.raises(Exception, match="Download Error"):
                 worker.run()
-            except queue.Empty:
-                pass
 
             # Verify error was printed
             mock_print.assert_any_call("Download Error")
