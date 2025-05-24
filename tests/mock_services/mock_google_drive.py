@@ -81,7 +81,12 @@ class MockGoogleDriveService:
         with open(local_path, 'rb') as f:
             content = f.read()
         
+        # More precise mime type detection
         mime_type, _ = mimetypes.guess_type(local_path)
+        if mime_type is None:
+            with open(local_path, 'r', encoding='utf-8') as f:
+                sample = f.read(1024)
+                mime_type = 'text/plain' if sample.isprintable() else 'application/octet-stream'
         
         mock_file = MockGoogleDriveFile(
             id=str(len(self._files) + 1),
