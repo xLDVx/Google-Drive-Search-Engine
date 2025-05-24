@@ -93,7 +93,7 @@ def test_download_file_error_scenarios(mock_que, mock_credentials):
     # Test invalid input scenarios
     error_test_cases = [
         (None, None, ValueError, "Invalid file ID"),
-        ({"name": "test.txt"}, None, ValueError, "Invalid file ID"),
+        (None, "test.txt", ValueError, "Invalid file ID"),
         ("", "test.txt", ValueError, "Invalid file ID")
     ]
     
