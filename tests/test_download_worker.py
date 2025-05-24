@@ -1,12 +1,17 @@
 import pytest
 import os
 import sys
+import queue
 from unittest.mock import Mock, patch
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from WorkerThreads.DownloadWorker import DownloadWorker
+
+class MockCredentials:
+    def __init__(self):
+        self.token = 'mock_token'
 
 class MockGoogleDriveService:
     def __init__(self, files=None):
@@ -23,7 +28,9 @@ class MockGoogleDriveService:
 
 def test_download_worker_initialization():
     """Test DownloadWorker initialization."""
-    worker = DownloadWorker()
+    mock_queue = queue.Queue()
+    mock_credentials = MockCredentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
     assert worker is not None
 
 @patch('WorkerThreads.DownloadWorker.build')
@@ -40,20 +47,26 @@ def test_google_drive_file_retrieval(mock_build):
     mock_build.return_value = mock_service
 
     # Initialize DownloadWorker
-    worker = DownloadWorker()
+    mock_queue = queue.Queue()
+    mock_credentials = MockCredentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
     
     # Test file listing
-    files = worker.list_files()
-    assert len(files) == 2
-    assert all('id' in file and 'name' in file for file in files)
+    with patch.object(worker, 'get_google_drive_service', return_value=mock_service):
+        files = worker.list_files()
+        assert len(files) == 2
+        assert all('id' in file and 'name' in file for file in files)
 
 def test_file_download_error_handling():
     """Test error handling during file download."""
-    worker = DownloadWorker()
+    mock_queue = queue.Queue()
+    mock_credentials = MockCredentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
     
     # Simulate file download with non-existent file
-    with pytest.raises(FileNotFoundError):
-        worker.download_file('non_existent_file_id')
+    with patch.object(worker, 'get_google_drive_service'):
+        with pytest.raises(FileNotFoundError):
+            worker.download_file('non_existent_file_id')
 
 @patch('WorkerThreads.DownloadWorker.build')
 def test_file_type_filtering(mock_build):
@@ -67,16 +80,22 @@ def test_file_type_filtering(mock_build):
     mock_service = MockGoogleDriveService(files=mock_files)
     mock_build.return_value = mock_service
 
-    worker = DownloadWorker()
+    # Initialize DownloadWorker
+    mock_queue = queue.Queue()
+    mock_credentials = MockCredentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
     
     # Test file type filtering
-    text_files = worker.list_files(mime_types=['text/plain'])
-    assert len(text_files) == 1
-    assert text_files[0]['name'] == 'text.txt'
+    with patch.object(worker, 'get_google_drive_service', return_value=mock_service):
+        text_files = worker.list_files(mime_types=['text/plain'])
+        assert len(text_files) == 1
+        assert text_files[0]['name'] == 'text.txt'
 
 def test_authentication_dependency():
     """Test that DownloadWorker requires authentication."""
-    worker = DownloadWorker()
+    mock_queue = queue.Queue()
+    mock_credentials = MockCredentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
     
     # Simulate lack of credentials
     with pytest.raises(PermissionError):
