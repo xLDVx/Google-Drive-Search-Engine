@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from WorkerThreads.DownloadWorker import DownloadWorker
+from googleapiclient.discovery import build
 
 class MockGoogleDriveService:
     def __init__(self, files=None):
@@ -36,7 +37,7 @@ def test_download_worker_initialization():
     worker = DownloadWorker()
     assert worker is not None
 
-@patch('WorkerThreads.DownloadWorker.build')
+@patch('googleapiclient.discovery.build')
 def test_list_files_in_drive(mock_build, mock_drive_service):
     """Test listing files from Google Drive."""
     # Prepare mock files
@@ -61,7 +62,7 @@ def test_list_files_in_drive(mock_build, mock_drive_service):
     assert files[0]["name"] == "document1.txt"
     assert files[1]["name"] == "document2.pdf"
 
-@patch('WorkerThreads.DownloadWorker.build')
+@patch('googleapiclient.discovery.build')
 def test_file_filtering_by_mime_type(mock_build, mock_drive_service):
     """Test filtering files by MIME type."""
     # Prepare mock files with different MIME types
@@ -99,7 +100,7 @@ def test_handle_file_download_errors():
     with pytest.raises(ValueError):
         worker.download_file({"name": "test.txt"})
 
-@patch('WorkerThreads.DownloadWorker.build')
+@patch('googleapiclient.discovery.build')
 def test_file_download_functionality(mock_build):
     """Test basic file download functionality."""
     # Mock file details
