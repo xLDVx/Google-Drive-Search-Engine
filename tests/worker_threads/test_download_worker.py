@@ -7,6 +7,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from WorkerThreads.DownloadWorker import DownloadWorker
+from oauth2client.client import OAuth2Credentials
 
 class MockGoogleDriveService:
     def __init__(self, files=None, error=None):
@@ -24,12 +25,21 @@ class MockGoogleDriveService:
     def get(self, fileId):
         return Mock(execute=lambda: next((f for f in self.files if f['id'] == fileId), None))
 
+def create_mock_credentials():
+    """Create a mock OAuth2Credentials instance."""
+    mock_creds = Mock(spec=OAuth2Credentials)
+    mock_creds.access_token = 'mock_access_token'
+    mock_creds.refresh.return_value = None
+    return mock_creds
+
 def test_download_worker_initialization():
     """Test DownloadWorker initialization."""
     mock_service = MockGoogleDriveService()
-    worker = DownloadWorker(mock_service)
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_service, mock_credentials)
     assert worker is not None
     assert worker.service == mock_service
+    assert worker.credentials == mock_credentials
 
 def test_download_worker_file_retrieval():
     """Test file retrieval from Google Drive."""
@@ -46,7 +56,8 @@ def test_download_worker_file_retrieval():
         }
     ]
     mock_service = MockGoogleDriveService(files=mock_files)
-    worker = DownloadWorker(mock_service)
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_service, mock_credentials)
 
     # Test file list retrieval
     retrieved_files = worker.list_files()
@@ -58,7 +69,8 @@ def test_download_worker_error_handling():
     # Simulating an authentication error
     mock_auth_error = Exception("Authentication Failed")
     mock_service = MockGoogleDriveService(error=mock_auth_error)
-    worker = DownloadWorker(mock_service)
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_service, mock_credentials)
 
     # Test error handling
     with pytest.raises(Exception, match="Authentication Failed"):
@@ -84,7 +96,8 @@ def test_download_worker_file_filtering():
         }
     ]
     mock_service = MockGoogleDriveService(files=mock_files)
-    worker = DownloadWorker(mock_service)
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_service, mock_credentials)
 
     # Test supported file type filtering
     supported_files = worker.list_files()
@@ -94,7 +107,8 @@ def test_download_worker_file_filtering():
 def test_download_worker_empty_drive():
     """Test behavior when Google Drive is empty."""
     mock_service = MockGoogleDriveService(files=[])
-    worker = DownloadWorker(mock_service)
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_service, mock_credentials)
 
     # Test empty drive scenario
     retrieved_files = worker.list_files()
