@@ -65,17 +65,27 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     # Create a mock file to download
     test_file = {"id": "test_file_id", "name": "test_file.txt"}
 
-    # Mock dependencies to simulate file validation
-    with patch('os.path.exists', return_value=False):
-        with patch('os.path.splitext', return_value=('test_file', '.txt')):
-            monkeypatch.setattr(worker, 'download_file', mock_download_file)
-            mock_queue.put(test_file)
+    # Prepare the queue
+    mock_queue.put(test_file)
 
-            # Capture print output to check error handling
-            with patch('builtins.print') as mock_print:
+    # Mock dependencies
+    with patch('os.path.exists', return_value=False), \
+         patch('os.path.splitext', return_value=('test_file', '.txt')), \
+         patch('os.path.join', return_value="Data/raw/test_file.txt"):
+        
+        monkeypatch.setattr(worker, 'validFile', lambda x: True)
+        monkeypatch.setattr(worker, 'download_file', mock_download_file)
+
+        # Capture print output to check error handling
+        with patch('builtins.print') as mock_print:
+            # We need to use a try/except to handle the queue.Empty
+            try:
                 worker.run()
-                # Verify both download error and file name are printed
-                mock_print.assert_any_call("Download Error")
+            except queue.Empty:
+                pass
+
+            # Verify error was printed
+            mock_print.assert_any_call("Download Error")
 
 def test_download_worker_queue_empty_handling():
     """Test worker behavior when queue is empty."""
