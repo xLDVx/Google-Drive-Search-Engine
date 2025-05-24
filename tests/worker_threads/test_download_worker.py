@@ -59,7 +59,7 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     worker = DownloadWorker(mock_queue, mock_credentials)
 
     # Mocking the download_file method to raise an exception
-    def mock_download_file(self, file_id, output_file):
+    def mock_download_file(self, file_id, file_name):
         raise Exception("Download Error")
 
     monkeypatch.setattr(worker, 'download_file', mock_download_file)
