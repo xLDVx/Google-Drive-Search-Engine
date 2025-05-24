@@ -1,87 +1,110 @@
 import pytest
 import os
+import queue
+import threading
+from unittest.mock import MagicMock
+
+# Import the actual DownloadWorker
 from WorkerThreads.DownloadWorker import DownloadWorker
-from tests.mock_gdrive_service import MockGDriveService
 
 class TestDownloadWorker:
     @pytest.fixture
-    def mock_files(self):
+    def mock_credentials(self):
         """
-        Fixture providing sample mock files for testing.
+        Create mock credentials for testing.
+        """
+        mock_creds = MagicMock()
+        mock_creds.authorize.return_value = MagicMock()
+        return mock_creds
+
+    @pytest.fixture
+    def mock_queue(self):
+        """
+        Create a mock queue for testing.
+        """
+        return queue.Queue()
+
+    @pytest.fixture
+    def sample_files(self):
+        """
+        Provide sample file data for testing.
         """
         return [
             {
-                'id': 'file1',
-                'name': 'test_document.txt',
-                'mimeType': 'text/plain',
-                'content': b'Sample document content'
+                "id": "file1",
+                "name": "document.txt",
+                "mimeType": "text/plain"
             },
             {
-                'id': 'file2',
-                'name': 'test_spreadsheet.xlsx',
-                'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'content': b'Binary spreadsheet data'
+                "id": "file2",
+                "name": "spreadsheet.xlsx",
+                "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             }
         ]
 
-    @pytest.fixture
-    def download_worker(self, mock_files):
+    def test_valid_file_extensions(self, mock_credentials, mock_queue):
         """
-        Create a DownloadWorker with mock Google Drive service.
+        Test the valid file extension detection.
         """
-        mock_service = MockGDriveService(mock_files)
-        return DownloadWorker(mock_service)
-
-    def test_list_files(self, download_worker, mock_files):
-        """
-        Test listing files from Google Drive.
-        """
-        files = download_worker.list_files()
-        assert len(files) == len(mock_files)
-        assert all(file['name'] in [f['name'] for f in mock_files] for file in files)
-
-    def test_list_files_with_query(self, download_worker, mock_files):
-        """
-        Test listing files with a search query.
-        """
-        query_files = download_worker.list_files("document")
-        assert len(query_files) == 1
-        assert query_files[0]['name'] == 'test_document.txt'
-
-    def test_download_file(self, download_worker, mock_files):
-        """
-        Test file download functionality.
-        """
-        file_id = 'file1'
-        downloaded_file = download_worker.download_file(file_id)
+        download_worker = DownloadWorker(mock_queue, mock_credentials)
         
-        assert downloaded_file is not None
-        assert downloaded_file == mock_files[0]['content']
-
-    def test_download_nonexistent_file(self, download_worker):
-        """
-        Test handling of non-existent file download.
-        """
-        with pytest.raises(FileNotFoundError):
-            download_worker.download_file('nonexistent_file')
-
-    def test_file_metadata(self, download_worker, mock_files):
-        """
-        Test retrieving file metadata.
-        """
-        file_id = 'file2'
-        metadata = download_worker.get_file_metadata(file_id)
+        valid_files = [
+            "document.txt", "report.csv", "presentation.pptx", 
+            "image.jpg", "data.pdf", "spreadsheet.xlsx"
+        ]
         
-        assert metadata['id'] == file_id
-        assert metadata['name'] == 'test_spreadsheet.xlsx'
-        assert metadata['mimeType'] == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-
-    def test_file_type_detection(self, download_worker, mock_files):
-        """
-        Test file type detection.
-        """
-        text_file = [f for f in mock_files if f['name'] == 'test_document.txt'][0]
-        spreadsheet_file = [f for f in mock_files if f['name'] == 'test_spreadsheet.xlsx'][0]
+        invalid_files = [
+            "script.py", "config.yaml", "unknown.bin"
+        ]
         
-        assert download_worker.detect_file_type(text_file) == 'text/plain'
-        assert download_worker.detect_file_type(spreadsheet_file) == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        for file in valid_files:
+            assert download_worker.validFile(file) is True, f"{file} should be considered valid"
+        
+        for file in invalid_files:
+            assert download_worker.validFile(file) is False, f"{file} should be considered invalid"
+
+    def test_worker_initialization(self, mock_credentials, mock_queue):
+        """
+        Test Download Worker initialization.
+        """
+        download_worker = DownloadWorker(mock_queue, mock_credentials)
+        
+        assert isinstance(download_worker, threading.Thread)
+        assert download_worker.que == mock_queue
+        assert download_worker.credentials == mock_credentials
+
+    def test_download_file_processing(self, mock_credentials, mock_queue, sample_files, tmp_path):
+        """
+        Test file download processing logic.
+        Mock the download process to simulate file retrieval.
+        """
+        # Mock the Data/raw directory
+        os.makedirs(os.path.join(tmp_path, "Data", "raw"), exist_ok=True)
+        
+        # Temporarily replace the download directory for testing
+        original_dir = os.path.join("Data", "raw")
+        os.environ['DOWNLOAD_DIR'] = str(tmp_path)
+
+        try:
+            # Set up the mock queue with test files
+            for file in sample_files:
+                mock_queue.put(file)
+
+            # Mock the download_file method to simulate file download
+            DownloadWorker.download_file = MagicMock()
+
+            # Create and start the download worker
+            download_worker = DownloadWorker(mock_queue, mock_credentials)
+            download_worker.start()
+            download_worker.join()  # Wait for thread to complete
+
+            # Verify queue processing
+            assert mock_queue.empty()
+
+            # Verify download_file was called for valid files
+            download_calls = DownloadWorker.download_file.call_count
+            assert download_calls == len(sample_files)
+
+        finally:
+            # Restore original download directory
+            del os.environ['DOWNLOAD_DIR']
