@@ -31,18 +31,26 @@ class DownloadWorker(threading.Thread):
             self.que.task_done()
 
     def validFile(self,file_name):
-        supportedExt=[".csv",".doc",".docx",".epub",".eml",".gif",".jpg",".jpeg",".json",".html",
-        ".htm",".mp3",".msg",".odt",".ogg",".pdf",".png",".pptx",".ps",".rtf",".tiff",".tif",".txt",
-        ".wav",".xlsx",".xls"]
-        pre, ext = os.path.splitext(os.path.basename(file_name))
-        print(ext)
-        if ext in supportedExt:
-            return True
-            
-        return False
+        # Handle None or empty input
+        if not file_name:
+            return False
         
-
-
+        # Handle whitespace-only input
+        if isinstance(file_name, str) and file_name.strip() == "":
+            return False
+        
+        # Supported extensions
+        supportedExt=[".csv",".doc",".docx",".epub",".eml",".gif",".jpg",".jpeg",".json",".html",\
+        ".htm",".mp3",".msg",".odt",".ogg",".pdf",".png",".pptx",".ps",".rtf",".tiff",".tif",".txt",\
+        ".wav",".xlsx",".xls"]
+        
+        # Extract file extension
+        pre, ext = os.path.splitext(os.path.basename(str(file_name)))
+        
+        # Return True if extension matches supported extensions
+        # Note: Exact match, case-sensitive
+        return ext.lower() in [e.lower() for e in supportedExt]
+        
     def download_file(self,file_id, output_file):
         try:
             credentials = self.credentials
@@ -58,4 +66,3 @@ class DownloadWorker(threading.Thread):
             fh.close()
         except Exception as e:
             print(e)
-
