@@ -1,7 +1,7 @@
 import pytest
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -28,28 +28,34 @@ def mock_drive_service():
     return MockGoogleDriveService()
 
 @pytest.fixture
-def download_worker():
-    """Fixture to create a DownloadWorker instance."""
-    return DownloadWorker()
+def mock_que():
+    """Fixture to create a mock queue."""
+    return MagicMock()
 
-def test_download_worker_initialization():
+@pytest.fixture
+def mock_credentials():
+    """Fixture to create mock credentials."""
+    mock_creds = MagicMock()
+    mock_creds.authorization_header = {"Authorization": "Bearer mock_token"}
+    return mock_creds
+
+def test_download_worker_initialization(mock_que, mock_credentials):
     """Test that DownloadWorker can be initialized."""
-    worker = DownloadWorker()
+    worker = DownloadWorker(mock_que, mock_credentials)
     assert worker is not None
 
 @patch('googleapiclient.discovery.build')
-def test_list_files_in_drive(mock_build, mock_drive_service):
+def test_list_files_in_drive(mock_build, mock_que, mock_credentials):
     """Test listing files from Google Drive."""
     # Prepare mock files
     mock_files = [
         {"id": "file1", "name": "document1.txt", "mimeType": "text/plain"},
         {"id": "file2", "name": "document2.pdf", "mimeType": "application/pdf"}
     ]
-    mock_drive_service.files = mock_files
     mock_build.return_value.files.return_value.list.return_value.execute.return_value = {"files": mock_files}
 
     # Create DownloadWorker
-    worker = DownloadWorker()
+    worker = DownloadWorker(mock_que, mock_credentials)
 
     # Mock the service build method
     worker.service = mock_build.return_value
@@ -63,7 +69,7 @@ def test_list_files_in_drive(mock_build, mock_drive_service):
     assert files[1]["name"] == "document2.pdf"
 
 @patch('googleapiclient.discovery.build')
-def test_file_filtering_by_mime_type(mock_build, mock_drive_service):
+def test_file_filtering_by_mime_type(mock_build, mock_que, mock_credentials):
     """Test filtering files by MIME type."""
     # Prepare mock files with different MIME types
     mock_files = [
@@ -71,11 +77,10 @@ def test_file_filtering_by_mime_type(mock_build, mock_drive_service):
         {"id": "file2", "name": "document2.pdf", "mimeType": "application/pdf"},
         {"id": "file3", "name": "image.jpg", "mimeType": "image/jpeg"}
     ]
-    mock_drive_service.files = mock_files
     mock_build.return_value.files.return_value.list.return_value.execute.return_value = {"files": mock_files}
 
     # Create DownloadWorker
-    worker = DownloadWorker()
+    worker = DownloadWorker(mock_que, mock_credentials)
     worker.service = mock_build.return_value
 
     # Filter files by specific MIME types
@@ -88,9 +93,9 @@ def test_file_filtering_by_mime_type(mock_build, mock_drive_service):
     assert len(pdf_files) == 1
     assert pdf_files[0]["name"] == "document2.pdf"
 
-def test_handle_file_download_errors():
+def test_handle_file_download_errors(mock_que, mock_credentials):
     """Test error handling during file download."""
-    worker = DownloadWorker()
+    worker = DownloadWorker(mock_que, mock_credentials)
     
     # Test with invalid file
     with pytest.raises(ValueError):
@@ -101,7 +106,7 @@ def test_handle_file_download_errors():
         worker.download_file({"name": "test.txt"})
 
 @patch('googleapiclient.discovery.build')
-def test_file_download_functionality(mock_build):
+def test_file_download_functionality(mock_build, mock_que, mock_credentials):
     """Test basic file download functionality."""
     # Mock file details
     mock_file = {
@@ -116,7 +121,7 @@ def test_file_download_functionality(mock_build):
     mock_build.return_value.files.return_value.get_media.return_value = mock_media
 
     # Create DownloadWorker
-    worker = DownloadWorker()
+    worker = DownloadWorker(mock_que, mock_credentials)
     worker.service = mock_build.return_value
 
     # Attempt download
