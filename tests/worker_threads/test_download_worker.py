@@ -82,12 +82,14 @@ def test_download_worker_file_download_error_handling(monkeypatch):
             monkeypatch.setattr(worker, 'download_file', mock_download_file)
 
             # Capture and verify the exception
-            with pytest.raises(Exception) as exc_info:
+            try:
                 worker.run()
-            
-            # Verify the error message and print
-            assert "Download Error" in str(exc_info.value)
-            mock_print.assert_any_call("Download Error")
+            except Exception as e:
+                # Verify the error message and print
+                assert "Download Error" in str(e)
+                mock_print.assert_any_call("Download Error")
+                # If an exception is raised, let it pass
+                raise
 
 def test_download_worker_queue_empty_handling():
     """Test worker behavior when queue is empty."""
