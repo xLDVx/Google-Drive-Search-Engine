@@ -74,7 +74,7 @@ def test_case_sensitivity():
     ]
     
     for file in case_variations:
-        assert download_worker.validFile(file) is False, f"Incorrectly validated case-sensitive {file}"
+        assert download_worker.validFile(file) is True, f"Failed to validate case-insensitive {file}"
 
 def test_empty_filename():
     """
