@@ -75,18 +75,18 @@ def test_download_worker_file_download_error_handling(monkeypatch):
         with patch('builtins.print') as mock_print:
             # Replace the download_file method to raise an exception
             def mock_download_file(self, file_id, output_file):
-                # Simulate the print that would happen in the actual download_file method
                 print("Download Error")
                 raise Exception("Download Error")
             
             # Use monkeypatch to replace the method
             monkeypatch.setattr(worker, 'download_file', mock_download_file)
 
-            # We expect the method to print the error and raise an exception
-            with pytest.raises(Exception, match="Download Error"):
+            # Capture and verify the exception
+            with pytest.raises(Exception) as exc_info:
                 worker.run()
-
-            # Verify the download error was printed
+            
+            # Verify the error message and print
+            assert "Download Error" in str(exc_info.value)
             mock_print.assert_any_call("Download Error")
 
 def test_download_worker_queue_empty_handling():
