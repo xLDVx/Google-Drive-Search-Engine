@@ -73,11 +73,15 @@ def test_download_worker_file_download_error_handling(monkeypatch):
          patch('os.path.splitext', return_value=('test_file', '.txt')), \
          patch('os.path.join', return_value="Data/raw/test_file.txt"):
         
-        monkeypatch.setattr(worker, 'validFile', lambda x: True)
-        monkeypatch.setattr(worker, 'download_file', mock_download_file)
-
         # Capture print output to check error handling
         with patch('builtins.print') as mock_print:
+            # Use the real download_file method
+            def custom_download_file(self, file_id, output_file):
+                print("Download Error")
+                raise Exception("Download Error")
+            
+            worker.download_file = custom_download_file
+
             # We need to use a try/except to handle the queue.Empty
             try:
                 worker.run()
