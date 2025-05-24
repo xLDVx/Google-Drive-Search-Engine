@@ -62,21 +62,27 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     test_file = {"id": "test_file_id", "name": "test_file.txt"}
     mock_queue.put(test_file)
 
+    # Ensure the test file path is in the expected location
+    def mock_path_join(*args):
+        return "Data/raw/test_file.txt"
+
     # Mock dependencies
     with patch('os.path.exists', return_value=False), \
          patch('os.path.splitext', return_value=('test_file', '.txt')), \
-         patch('os.path.join', return_value="Data/raw/test_file.txt"):
+         patch('os.path.join', side_effect=mock_path_join):
         
         # Capture print output to check error handling
         with patch('builtins.print') as mock_print:
             # Replace the download_file method to raise an exception
             def mock_download_file(self, file_id, output_file):
+                # Simulate the print that would happen in the actual download_file method
                 print("Download Error")
                 raise Exception("Download Error")
             
+            # Use monkeypatch to replace the method
             monkeypatch.setattr(worker, 'download_file', mock_download_file)
 
-            # We need to handle the queue.Empty exception
+            # We expect the method to print the error and raise an exception
             with pytest.raises(Exception, match="Download Error"):
                 worker.run()
 
