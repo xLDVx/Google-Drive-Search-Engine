@@ -3,6 +3,7 @@ import os
 import sys
 from unittest.mock import Mock, patch, MagicMock
 import queue
+import io
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -45,35 +46,44 @@ def test_valid_file():
     assert worker.validFile("script.sh") == False
     assert worker.validFile("data.dat") == False
 
+@patch('WorkerThreads.DownloadWorker.os.path.join', return_value='/Data/raw/test_file.txt')
 @patch('WorkerThreads.DownloadWorker.discovery.build')
-@patch('WorkerThreads.DownloadWorker.os.path.exists')
 @patch('WorkerThreads.DownloadWorker.open', create=True)
-def test_download_file(mock_open, mock_exists, mock_discovery_build, mock_que, mock_credentials):
+def test_download_file(mock_open, mock_discovery_build, mock_join, mock_que, mock_credentials):
     """Test file download functionality."""
-    # Mock the dependencies
-    mock_exists.return_value = False
-    mock_file_service = MagicMock()
-    mock_media_download = MagicMock()
+    # Prepare mock objects
+    mock_service = MagicMock()
+    mock_request = MagicMock()
+    mock_downloader = MagicMock()
     
-    # Configure the mocks
-    mock_discovery_build.return_value = mock_file_service
-    mock_file_service.files.return_value.get_media.return_value = mock_media_download
-    mock_media_download.next_chunk.return_value = (MagicMock(progress=lambda: 0.5), False)
-    mock_media_download.next_chunk.side_effect = [
-        (MagicMock(progress=lambda: 0.5), False), 
-        (MagicMock(progress=lambda: 1.0), True)
+    # Configure mocks
+    mock_discovery_build.return_value = mock_service
+    mock_service.files.return_value.get_media.return_value = mock_request
+    
+    mock_status = MagicMock()
+    mock_status.progress.return_value = 0.5
+    mock_downloader.next_chunk.side_effect = [
+        (mock_status, False),
+        (mock_status, True)
     ]
     
-    # Create DownloadWorker
-    worker = DownloadWorker(mock_que, mock_credentials)
-    
-    # Perform file download
-    worker.download_file("test_file_id", "test_file.txt")
+    # Patch MediaIoBaseDownload to return our mock downloader
+    with patch('WorkerThreads.DownloadWorker.MediaIoBaseDownload', return_value=mock_downloader):
+        # Create DownloadWorker
+        worker = DownloadWorker(mock_que, mock_credentials)
+        
+        # Perform file download
+        worker.download_file("test_file_id", "test_file.txt")
     
     # Assertions
-    mock_file_service.files.return_value.get_media.assert_called_once_with(fileId="test_file_id")
-    assert mock_media_download.next_chunk.call_count == 2
-    mock_open.assert_called_once_with(os.path.join("Data", "raw", "test_file.txt"), "wb")
+    # Verify service method calls
+    mock_service.files.return_value.get_media.assert_called_once_with(fileId="test_file_id")
+    
+    # Verify file open method call
+    mock_open.assert_called_once_with('/Data/raw/test_file.txt', 'wb')
+    
+    # Verify download method calls
+    assert mock_downloader.next_chunk.call_count == 2
 
 def test_run_method(mock_que, mock_credentials):
     """Test the run method of DownloadWorker."""
