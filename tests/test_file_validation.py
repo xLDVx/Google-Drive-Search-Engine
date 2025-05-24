@@ -1,17 +1,20 @@
 import os
 import sys
 import pytest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Mock external dependencies
-import sys
+# Extensive mocking of dependencies
 sys.modules['apiclient'] = Mock()
+sys.modules['apiclient.http'] = Mock()
 sys.modules['httplib2'] = Mock()
 sys.modules['oauth2client'] = Mock()
+sys.modules['oauth2client.file'] = Mock()
+sys.modules['apiclient.discovery'] = Mock()
 
+# Directly import the DownloadWorker after mocking
 from WorkerThreads.DownloadWorker import DownloadWorker
 
 class MockQueue:
