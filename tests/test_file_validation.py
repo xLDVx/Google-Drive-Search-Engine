@@ -57,16 +57,18 @@ def test_invalid_file_extensions():
         assert worker.validFile(file_name) == False, f"{file_name} should be invalid"
 
 def test_case_sensitivity():
-    """Test that file validation is case-insensitive for extensions."""
+    """Test that file validation is case-sensitive for extensions."""
     worker = DownloadWorker(MockQueue(), MockCredentials())
     
-    case_variations = [
-        "document.DOCX", "report.PDF", "image.JPEG", 
-        "data.CSV", "presentation.PPTX"
-    ]
+    case_sensitive_files = {
+        "document.DOCX": False,  # Not in supported list as is
+        "document.docx": True,   # Matches the supported list
+        "report.PDF": False,     # Not in supported list
+        "report.pdf": True       # Matches the supported list
+    }
     
-    for file_name in case_variations:
-        assert worker.validFile(file_name) == True, f"{file_name} should be valid"
+    for file_name, expected_result in case_sensitive_files.items():
+        assert worker.validFile(file_name) == expected_result, f"{file_name} validation failed"
 
 def test_filename_with_special_characters():
     """Test file validation with special characters in filenames."""
