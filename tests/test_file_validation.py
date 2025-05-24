@@ -1,9 +1,18 @@
 import os
 import sys
 import pytest
+from unittest.mock import MagicMock
 
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Mock external dependencies
+sys.modules['apiclient'] = MagicMock()
+sys.modules['apiclient.http'] = MagicMock()
+sys.modules['apiclient.discovery'] = MagicMock()
+sys.modules['oauth2client'] = MagicMock()
+sys.modules['oauth2client.file'] = MagicMock()
+sys.modules['httplib2'] = MagicMock()
 
 from WorkerThreads.DownloadWorker import DownloadWorker
 
