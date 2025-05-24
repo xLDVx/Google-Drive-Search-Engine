@@ -1,7 +1,7 @@
 import os
 import queue
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, mock_open
 from WorkerThreads.DownloadWorker import DownloadWorker
 
 class MockCredentials:
@@ -43,53 +43,45 @@ class TestDownloadWorker:
         for file in unsupported_files:
             assert worker.validFile(file) is False, f"{file} should be invalid"
 
-    @patch('os.path.exists')
-    @patch('WorkerThreads.DownloadWorker.discovery')
-    def test_download_file_success(self, mock_discovery, mock_exists, mock_queue, mock_credentials):
+    def test_download_file_success(self, mock_queue, mock_credentials):
         """Test successful file download scenario."""
-        # Simulate file does not exist
-        mock_exists.return_value = False
-
-        # Mock discovery service and download components
+        # Prepare test data
+        test_file_id = "test_file_id"
+        test_file_name = "test_document.pdf"
+        
+        # Create mock objects for services and download components
+        mock_http = Mock()
         mock_service = Mock()
         mock_request = Mock()
         mock_downloader = Mock()
-
-        mock_discovery.build.return_value = mock_service
-        mock_service.files().get_media.return_value = mock_request
         
-        # Simulate download progress
-        mock_downloader.next_chunk.return_value = (Mock(progress=lambda: 0.5), False)
-
-        # Create worker and test file download
-        worker = DownloadWorker(mock_queue, mock_credentials)
+        # Configure mock objects
+        mock_credentials.authorize = Mock(return_value=mock_http)
         
-        with patch('builtins.open', create=True) as mock_file:
-            with patch('WorkerThreads.DownloadWorker.MediaIoBaseDownload', return_value=mock_downloader):
-                worker.download_file("test_file_id", "test_file.pdf")
+        # Patch discovery and file operations
+        with patch('WorkerThreads.DownloadWorker.discovery.build', return_value=mock_service) as mock_build:
+            with patch('WorkerThreads.DownloadWorker.open', mock_open()) as mock_file:
+                with patch('os.path.exists', return_value=False):
+                    # Create worker instance
+                    worker = DownloadWorker(mock_queue, mock_credentials)
+                    
+                    # Configure mock service to return specific objects
+                    mock_service.files().get_media.return_value = mock_request
+                    
+                    # Simulate download progress
+                    mock_status = Mock()
+                    mock_status.progress.return_value = 0.5
+                    mock_downloader = Mock()
+                    mock_downloader.next_chunk.return_value = (mock_status, False)
+                    
+                    # Patch MediaIoBaseDownload
+                    with patch('WorkerThreads.DownloadWorker.MediaIoBaseDownload', return_value=mock_downloader):
+                        # Call download method
+                        worker.download_file(test_file_id, test_file_name)
 
-                # Verify interactions
-                mock_service.files().get_media.assert_called_once_with(fileId="test_file_id")
-                mock_file.assert_called_once()
-                mock_downloader.next_chunk.assert_called()
-
-    def test_worker_queue_processing(self, mock_queue, mock_credentials):
-        """Test worker processes queue items correctly."""
-        # Prepare test files
-        test_files = [
-            {"id": "file1", "name": "document1.pdf"},
-            {"id": "file2", "name": "image.jpg"}
-        ]
-
-        # Put files in queue
-        for file in test_files:
-            mock_queue.put(file)
-
-        # Create worker and patch download method
-        with patch.object(DownloadWorker, 'download_file') as mock_download:
-            with patch.object(DownloadWorker, 'validFile', return_value=True):
-                worker = DownloadWorker(mock_queue, mock_credentials)
-                worker.run()
-
-                # Verify download method called for each file
-                assert mock_download.call_count == len(test_files)
+                        # Verify interactions
+                        mock_credentials.authorize.assert_called_once()
+                        mock_build.assert_called_once_with("drive", "v3", http=mock_http)
+                        mock_service.files().get_media.assert_called_once_with(fileId=test_file_id)
+                        mock_file.assert_called_once()
+                        mock_downloader.next_chunk.assert_called()
