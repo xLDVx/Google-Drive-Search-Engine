@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
+import queue
 import sys
 import os
 
@@ -9,107 +10,74 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from WorkerThreads.DownloadWorker import DownloadWorker
 from oauth2client.client import OAuth2Credentials
 
-class MockGoogleDriveService:
-    def __init__(self, files=None, error=None):
-        self.files = files or []
-        self.error = error
-
-    def files(self):
-        return self
-
-    def list(self, **kwargs):
-        if self.error:
-            raise self.error
-        return Mock(execute=lambda: {'files': self.files})
-
-    def get(self, fileId):
-        return Mock(execute=lambda: next((f for f in self.files if f['id'] == fileId), None))
-
 def create_mock_credentials():
     """Create a mock OAuth2Credentials instance."""
     mock_creds = Mock(spec=OAuth2Credentials)
     mock_creds.access_token = 'mock_access_token'
-    mock_creds.refresh.return_value = None
+    mock_creds.authorize.return_value = Mock()
     return mock_creds
 
 def test_download_worker_initialization():
     """Test DownloadWorker initialization."""
-    mock_service = MockGoogleDriveService()
+    mock_queue = queue.Queue()
     mock_credentials = create_mock_credentials()
-    worker = DownloadWorker(mock_service, mock_credentials)
+    worker = DownloadWorker(mock_queue, mock_credentials)
     assert worker is not None
-    assert worker.service == mock_service
+    assert worker.que == mock_queue
     assert worker.credentials == mock_credentials
 
-def test_download_worker_file_retrieval():
-    """Test file retrieval from Google Drive."""
-    mock_files = [
-        {
-            'id': 'test_file_1', 
-            'name': 'sample_document.txt', 
-            'mimeType': 'text/plain'
-        },
-        {
-            'id': 'test_file_2', 
-            'name': 'sample_spreadsheet.xlsx', 
-            'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        }
+def test_download_worker_valid_file_extensions():
+    """Test file extension validation."""
+    mock_queue = queue.Queue()
+    mock_credentials = create_mock_credentials()
+    worker = DownloadWorker(mock_queue, mock_credentials)
+
+    # Test supported file extensions
+    supported_files = [
+        "document.txt", 
+        "report.pdf", 
+        "spreadsheet.xlsx", 
+        "image.jpg", 
+        "data.csv"
     ]
-    mock_service = MockGoogleDriveService(files=mock_files)
-    mock_credentials = create_mock_credentials()
-    worker = DownloadWorker(mock_service, mock_credentials)
-
-    # Test file list retrieval
-    retrieved_files = worker.list_files()
-    assert len(retrieved_files) == 2
-    assert all(file['id'] in ['test_file_1', 'test_file_2'] for file in retrieved_files)
-
-def test_download_worker_error_handling():
-    """Test error handling during file retrieval."""
-    # Simulating an authentication error
-    mock_auth_error = Exception("Authentication Failed")
-    mock_service = MockGoogleDriveService(error=mock_auth_error)
-    mock_credentials = create_mock_credentials()
-    worker = DownloadWorker(mock_service, mock_credentials)
-
-    # Test error handling
-    with pytest.raises(Exception, match="Authentication Failed"):
-        worker.list_files()
-
-def test_download_worker_file_filtering():
-    """Test file filtering based on MIME types."""
-    mock_files = [
-        {
-            'id': 'text_file', 
-            'name': 'document.txt', 
-            'mimeType': 'text/plain'
-        },
-        {
-            'id': 'pdf_file', 
-            'name': 'report.pdf', 
-            'mimeType': 'application/pdf'
-        },
-        {
-            'id': 'unsupported_file', 
-            'name': 'image.png', 
-            'mimeType': 'image/png'
-        }
+    unsupported_files = [
+        "document.exe", 
+        "script.bat", 
+        "malware.zip"
     ]
-    mock_service = MockGoogleDriveService(files=mock_files)
+
+    for file in supported_files:
+        assert worker.validFile(file) is True, f"Failed for supported file: {file}"
+
+    for file in unsupported_files:
+        assert worker.validFile(file) is False, f"Failed for unsupported file: {file}"
+
+def test_download_worker_file_download_error_handling(monkeypatch):
+    """Test error handling during file download."""
+    mock_queue = queue.Queue()
     mock_credentials = create_mock_credentials()
-    worker = DownloadWorker(mock_service, mock_credentials)
+    worker = DownloadWorker(mock_queue, mock_credentials)
 
-    # Test supported file type filtering
-    supported_files = worker.list_files()
-    assert len(supported_files) == 2
-    assert all(file['mimeType'] in ['text/plain', 'application/pdf'] for file in supported_files)
+    # Mocking the download_file method to raise an exception
+    def mock_download_file(self, file_id, output_file):
+        raise Exception("Download Error")
 
-def test_download_worker_empty_drive():
-    """Test behavior when Google Drive is empty."""
-    mock_service = MockGoogleDriveService(files=[])
+    monkeypatch.setattr(worker, 'download_file', mock_download_file)
+
+    # Simulate a file to download
+    test_file = {"id": "test_file_id", "name": "test_file.txt"}
+    mock_queue.put(test_file)
+
+    # Capture print output to check error handling
+    with patch('builtins.print') as mock_print:
+        worker.run()
+        mock_print.assert_any_call("Download Error")
+
+def test_download_worker_queue_empty_handling():
+    """Test worker behavior when queue is empty."""
+    mock_queue = queue.Queue()
     mock_credentials = create_mock_credentials()
-    worker = DownloadWorker(mock_service, mock_credentials)
+    worker = DownloadWorker(mock_queue, mock_credentials)
 
-    # Test empty drive scenario
-    retrieved_files = worker.list_files()
-    assert len(retrieved_files) == 0
+    # The worker should exit when queue is empty
+    worker.run()
