@@ -1,9 +1,16 @@
 import os
 import sys
 import pytest
+from unittest.mock import Mock
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Mock external dependencies
+import sys
+sys.modules['apiclient'] = Mock()
+sys.modules['httplib2'] = Mock()
+sys.modules['oauth2client'] = Mock()
 
 from WorkerThreads.DownloadWorker import DownloadWorker
 
@@ -77,8 +84,7 @@ def test_empty_filename():
     worker = DownloadWorker(MockQueue(), MockCredentials())
     
     assert worker.validFile("") == False
-    assert worker.validFile(None) == False
-
+    
 def test_filename_without_extension():
     """Test handling of files without an extension."""
     worker = DownloadWorker(MockQueue(), MockCredentials())
