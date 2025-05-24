@@ -1,7 +1,7 @@
 import pytest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, call
 import queue
 import io
 
@@ -23,34 +23,38 @@ def mock_credentials():
     mock_creds.authorize.return_value = MagicMock()
     return mock_creds
 
-@patch('os.path.exists')
-@patch('os.path.join')
-def test_download_worker_initialization(mock_join, mock_exists, mock_que, mock_credentials):
+def test_download_worker_initialization(mock_que, mock_credentials):
     """Test that DownloadWorker can be initialized."""
-    mock_exists.return_value = False
-    mock_join.return_value = "/mock/path/to/file"
-    
     worker = DownloadWorker(mock_que, mock_credentials)
     assert worker is not None
+    assert worker.que == mock_que
+    assert worker.credentials == mock_credentials
 
 def test_valid_file():
     """Test file validation method."""
     worker = DownloadWorker(queue.Queue(), MagicMock())
     
     # Test supported file types
-    assert worker.validFile("document.txt") == True
-    assert worker.validFile("image.jpg") == True
-    assert worker.validFile("spreadsheet.xlsx") == True
+    supported_files = [
+        "document.txt", "image.jpg", "spreadsheet.xlsx", 
+        "presentation.pptx", "pdf.pdf", "audio.mp3"
+    ]
+    unsupported_files = [
+        "script.sh", "data.dat", "executable.exe", 
+        "compressed.zip", "archive.tar"
+    ]
     
-    # Test unsupported file types
-    assert worker.validFile("script.sh") == False
-    assert worker.validFile("data.dat") == False
+    for file in supported_files:
+        assert worker.validFile(file) == True, f"Failed for supported file: {file}"
+    
+    for file in unsupported_files:
+        assert worker.validFile(file) == False, f"Failed for unsupported file: {file}"
 
 @patch('WorkerThreads.DownloadWorker.os.path.join', return_value='/Data/raw/test_file.txt')
 @patch('WorkerThreads.DownloadWorker.discovery.build')
 @patch('WorkerThreads.DownloadWorker.open', create=True)
-def test_download_file(mock_open, mock_discovery_build, mock_join, mock_que, mock_credentials):
-    """Test file download functionality."""
+def test_download_file_successful(mock_open, mock_discovery_build, mock_join, mock_que, mock_credentials):
+    """Test successful file download functionality."""
     # Prepare mock objects
     mock_service = MagicMock()
     mock_request = MagicMock()
@@ -76,17 +80,47 @@ def test_download_file(mock_open, mock_discovery_build, mock_join, mock_que, moc
         worker.download_file("test_file_id", "test_file.txt")
     
     # Assertions
-    # Verify service method calls
     mock_service.files.return_value.get_media.assert_called_once_with(fileId="test_file_id")
-    
-    # Verify file open method call
     mock_open.assert_called_once_with('/Data/raw/test_file.txt', 'wb')
-    
-    # Verify download method calls
     assert mock_downloader.next_chunk.call_count == 2
 
-def test_run_method(mock_que, mock_credentials):
-    """Test the run method of DownloadWorker."""
+def test_download_file_error_scenarios(mock_que, mock_credentials):
+    """Test various error scenarios during file download."""
+    worker = DownloadWorker(mock_que, mock_credentials)
+    
+    # Test invalid input scenarios
+    error_test_cases = [
+        (None, None, ValueError, "Invalid file input"),
+        ({"name": "test.txt"}, None, ValueError, "Missing file ID"),
+        ("", "test.txt", ValueError, "Empty file ID")
+    ]
+    
+    for file_id, file_name, expected_exception, error_message in error_test_cases:
+        with pytest.raises(expected_exception, match=error_message):
+            worker.download_file(file_id, file_name)
+
+@patch('WorkerThreads.DownloadWorker.discovery.build')
+def test_download_file_network_error(mock_discovery_build, mock_que, mock_credentials):
+    """Test handling of network or service-related errors."""
+    # Configure mock to raise an exception
+    mock_service = MagicMock()
+    mock_service.files.return_value.get_media.side_effect = Exception("Network error")
+    mock_discovery_build.return_value = mock_service
+    
+    worker = DownloadWorker(mock_que, mock_credentials)
+    
+    # Use a mock file for testing
+    mock_file = {
+        "id": "test_file_id", 
+        "name": "test_file.txt"
+    }
+    
+    # Expect an exception to be raised or logged
+    with pytest.raises(Exception, match="Network error"):
+        worker.download_file(mock_file["id"], mock_file["name"])
+
+def test_run_method_error_handling(mock_que, mock_credentials):
+    """Test error handling in the run method."""
     # Prepare a mock file
     mock_file = {
         "id": "test_file_id", 
@@ -97,14 +131,19 @@ def test_run_method(mock_que, mock_credentials):
     mock_que.put(mock_file)
     
     # Create worker
-    with patch.object(DownloadWorker, 'download_file') as mock_download, \
+    with patch.object(DownloadWorker, 'download_file', side_effect=Exception("Download failed")) as mock_download, \
          patch.object(DownloadWorker, 'validFile', return_value=True), \
-         patch('os.path.exists', return_value=False):
+         patch('os.path.exists', return_value=False), \
+         patch('builtins.print') as mock_print:
         
         worker = DownloadWorker(mock_que, mock_credentials)
         worker.run()
         
         # Verify download method was called
         mock_download.assert_called_once_with(mock_file["id"], mock_file["name"])
+        
+        # Verify error was printed
+        mock_print.assert_called_with(f"Download failed for {mock_file['name']}")
+        
         # Verify task is marked as done
         assert mock_que.empty()
