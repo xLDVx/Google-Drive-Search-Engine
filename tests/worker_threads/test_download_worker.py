@@ -58,8 +58,8 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     mock_credentials = create_mock_credentials()
     worker = DownloadWorker(mock_queue, mock_credentials)
 
-    # Mocking the download_file method to raise an exception
-    def mock_download_file(self, file_id, file_name):
+    # Mocking the entire download_file method with exactly the same method signature
+    def mock_download_file(self, file_id, output_file):
         raise Exception("Download Error")
 
     monkeypatch.setattr(worker, 'download_file', mock_download_file)
@@ -69,9 +69,10 @@ def test_download_worker_file_download_error_handling(monkeypatch):
     mock_queue.put(test_file)
 
     # Capture print output to check error handling
-    with patch('builtins.print') as mock_print:
-        worker.run()
-        mock_print.assert_any_call("Download Error")
+    with patch('os.path.exists', return_value=False):
+        with patch('builtins.print') as mock_print:
+            worker.run()
+            mock_print.assert_any_call("Download Error")
 
 def test_download_worker_queue_empty_handling():
     """Test worker behavior when queue is empty."""
